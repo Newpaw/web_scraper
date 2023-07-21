@@ -2,7 +2,7 @@ import uvicorn
 import httpx
 import secrets
 
-from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException
+from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Path
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.params import Depends
 from sqlalchemy.orm import Session, sessionmaker
@@ -68,7 +68,7 @@ async def register_webhook(
     db.commit()
     return {"message": "Webhook registered successfully"}
 
-from fastapi import Path
+
 @app.get("/scrape/{base_url:path}", response_model=None)
 async def scrape(
     base_url: str, client_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
