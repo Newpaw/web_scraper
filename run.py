@@ -10,9 +10,11 @@ from sqlalchemy import Column, String, create_engine
 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from typing import List
 
 from scraper import scrape_website_async
 from logging_conf import logger
+from models import UrlData, RegistrationClientId, WebhookUrlRegistration
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./sqlite.db"
 
@@ -49,7 +51,7 @@ async def root():
     response = RedirectResponse(url='/docs')
     return response
 
-@app.post("/register", response_model=None)
+@app.post("/register", response_model=RegistrationClientId)
 async def register(db: Session = Depends(get_db)):
     new_client_id = secrets.token_urlsafe(16)
     db.add(User(client_id=new_client_id))
@@ -57,7 +59,7 @@ async def register(db: Session = Depends(get_db)):
     return JSONResponse(status_code=202, content={"message": "Cliend_id created successfully.","client_id": new_client_id})
 
 
-@app.post("/webhook/{client_id}", response_model=None)
+@app.post("/webhook/{client_id}", response_model=WebhookUrlRegistration)
 async def register_webhook(
     client_id: str, webhook_url: str, db: Session = Depends(get_db)
 ):
@@ -69,7 +71,7 @@ async def register_webhook(
     return JSONResponse(status_code=202, content={"message": "Webhook registered successfully", "webhook_url": str(user.webhook_url)})
 
 
-@app.get("/scrape/{base_url:path}", response_model=None)
+@app.get("/scrape/{base_url:path}", response_model=None, description=f"It will return list of dictionaries to webhook.")
 async def scrape(
     base_url: str, client_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
 ):

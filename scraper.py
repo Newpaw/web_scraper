@@ -2,15 +2,18 @@ import aiohttp
 import asyncio
 import time
 
+
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from urllib.robotparser import RobotFileParser
+from typing import List
 
 from models import UrlData
 from logging_conf import logger
 
 
 async def fetch(session, url):
+    """Fetch the content of url"""
     try:
         async with session.get(url) as response:
             return await response.text()
@@ -20,6 +23,7 @@ async def fetch(session, url):
 
 
 async def fetch_robots(session, base_url):
+    """Fetch the robots.txt file from base_url"""
     robots = RobotFileParser()
     robots_url = urljoin(base_url, "/robots.txt")
     content = await fetch(session, robots_url)
@@ -29,6 +33,7 @@ async def fetch_robots(session, base_url):
 
 
 async def parse(session, base_url, url, depth=0, records_len=0):
+    """Parse the HTML of url"""
     if depth > 2:
         return None, []
 
@@ -64,12 +69,27 @@ async def parse(session, base_url, url, depth=0, records_len=0):
     return url_data, urls
 
 async def log_processed_records(records):
+    """Log the number of processed records every 10 seconds"""
     while True:
         logger.warning(f'Processed {len(records)} records so far.')
         await asyncio.sleep(10) 
 
 
-async def scrape_website_async(base_url, concurrent_tasks):
+async def scrape_website_async(base_url:str, concurrent_tasks:int = 10) -> List[UrlData]:
+    """
+    An asynchronous function that scrapes a website and returns all the 
+    collected data.
+
+    Parameters:
+        base_url (str): The base URL of the website to scrape. This should 
+        start with 'http://' or 'https://'.
+        
+        concurrent_tasks (int): The maximum number of concurrent tasks 
+        allowed for the scraping process. Default is 10.
+
+    Returns:
+        records (list): A list of records containing the scraped data.
+    """
     session = aiohttp.ClientSession()
     records = []
     urls_to_parse = [(base_url, 0)]
@@ -107,14 +127,15 @@ async def scrape_website_async(base_url, concurrent_tasks):
             task.cancel()
         log_task.cancel()
         await asyncio.gather(*tasks, log_task, return_exceptions=True)
-
+    
     return records
 
 async def main():
+    """Main function to test the web scraper"""
     base_url = "www.mluvii.com"
     for concurrent_tasks in [1, 10, 100]:
         start = time.time()
-        await scrape_website_async(f"https://{base_url}/", concurrent_tasks)
+        test = await scrape_website_async(f"https://{base_url}/", concurrent_tasks)
         end = time.time()
         print(
             f"Time taken with {concurrent_tasks} concurrent tasks: {end - start} seconds"
