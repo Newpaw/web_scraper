@@ -13,11 +13,11 @@ def get_custom_logger(name: str) -> logging.Logger:
 
     # create logger
     logger = logging.getLogger(name)
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(logging.INFO)
 
     # create console handler and set level to info
     handler = logging.StreamHandler()
-    handler.setLevel(logging.WARNING)
+    handler.setLevel(logging.INFO)
 
     # create formatter
     formatter = logging.Formatter("[%(asctime)s +0000] [%(process)d] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")

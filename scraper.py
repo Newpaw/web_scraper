@@ -2,6 +2,9 @@ import aiohttp
 import asyncio
 import time
 import uuid
+import json
+import redis
+import os
 
 
 from bs4 import BeautifulSoup
@@ -12,6 +15,14 @@ from typing import List
 from models import UrlData
 from logging_conf import logger
 
+
+redis_host_name = os.environ.get("REDIS_HOST_NAME", "localhost")
+
+try:
+    redis_instance = redis.Redis(host=redis_host_name, port=6379, db=0)
+except redis.RedisError as e:
+    logger.error(f"Nepodařilo se připojit k Redisu: {e}")
+    redis_instance = None
 
 async def fetch(session, url):
     """Fetch the content of url"""
@@ -79,6 +90,24 @@ async def log_processed_records(records):
         await asyncio.sleep(10) 
 
 
+def store_to_redis(base_url, records):
+    """Store the given records into Redis with the base URL as the key"""
+    
+    if redis_instance is not None:
+        # Convert records into JSON format and store into Redis
+        redis_instance.setex(base_url, 24 * 60 * 60, json.dumps([record.__dict__ for record in records]))
+        logger.info(f"Data for url {base_url} are stored to redis.")
+
+def get_from_redis(base_url):
+    """Get the records associated with the base URL from Redis"""
+    if redis_instance is not None and redis_instance.exists(base_url):
+        logger.info(f"Use cached data for {base_url}")
+        records_json = json.loads(redis_instance.get(base_url))
+        # Convert back into UrlData objects
+        records = [UrlData(**record_dict) for record_dict in records_json]
+        return records
+    return None
+
 async def scrape_website_async(base_url:str, concurrent_tasks:int = 10) -> List[UrlData]:
     """
     An asynchronous function that scrapes a website and returns all the 
@@ -94,6 +123,10 @@ async def scrape_website_async(base_url:str, concurrent_tasks:int = 10) -> List[
     Returns:
         records (list): A list of records containing the scraped data.
     """
+    records = get_from_redis(base_url)
+    if records is not None:
+        return records
+
     session = aiohttp.ClientSession()
     records = []
     urls_to_parse = [(base_url, 0)]
@@ -101,8 +134,8 @@ async def scrape_website_async(base_url:str, concurrent_tasks:int = 10) -> List[
     sem = asyncio.Semaphore(concurrent_tasks)  # Limit the number of concurrent tasks
 
     # Fetch initial URL and get possible redirected base_url
-    _, base_url = await fetch(session, base_url)
-    robots = await fetch_robots(session, base_url)
+    _, new_base_url = await fetch(session, base_url)
+    robots = await fetch_robots(session, new_base_url)
 
     log_task = asyncio.create_task(log_processed_records(records))
 
@@ -116,7 +149,7 @@ async def scrape_website_async(base_url:str, concurrent_tasks:int = 10) -> List[
                     continue
 
                 async with sem:
-                    task = asyncio.create_task(parse(session, base_url, url, depth))
+                    task = asyncio.create_task(parse(session, new_base_url, url, depth))
                     tasks.add(task)
             else:
                 done_tasks, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -134,11 +167,12 @@ async def scrape_website_async(base_url:str, concurrent_tasks:int = 10) -> List[
         log_task.cancel()
         await asyncio.gather(*tasks, log_task, return_exceptions=True)
     
+    store_to_redis(base_url,records)
     return records
 
 async def main():
     """Main function to test the web scraper"""
-    base_url = "novinky.cz"
+    base_url = "mluvii.com"
     for concurrent_tasks in [10100]:
         start = time.time()
         test = await scrape_website_async(f"https://{base_url}/", concurrent_tasks)
@@ -148,6 +182,6 @@ async def main():
         )
 
 if __name__ == "__main__":
-    pass
-    #asyncio.run(main())
+    #pass
+    asyncio.run(main())
     
