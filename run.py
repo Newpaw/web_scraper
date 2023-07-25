@@ -89,16 +89,22 @@ async def scrape(
 
 async def scrape_and_notify(db: Session, client_id: str, base_url: str):
     records = await scrape_website_async(base_url=f"https://{base_url}/", concurrent_tasks=10)
-    logger.warning(f"Finished scraping {base_url}")
-    await notify_webhook(db, client_id, {"records": [record.__dict__ for record in records]})
+    logger.info(f"Finished scraping {base_url}")
+    await notify_webhook(db, client_id, {"base_url": base_url, "records": [record.__dict__ for record in records]})
 
 
 async def notify_webhook(db: Session, client_id: str, data: dict):
     """Sends data to the registered webhook"""
     user = db.query(User).filter(User.client_id == client_id).first()
     if user and user.webhook_url:
-        async with httpx.AsyncClient() as client:
-            await client.post(user.webhook_url, json=data)
+        timeout = httpx.Timeout(10.0, write=30)
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                await client.post(user.webhook_url, json=data)
+                logger.info(f"Data sent to webhook {user.webhook_url}")
+        except httpx.HTTPError as err:
+            logger.error(f"An error occurred while trying to send data to the webhook: {err}")
+
 
 
 if __name__ == "__main__":
