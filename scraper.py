@@ -1,6 +1,7 @@
 import aiohttp
 import asyncio
 import time
+import uuid
 
 
 from bs4 import BeautifulSoup
@@ -16,28 +17,31 @@ async def fetch(session, url):
     """Fetch the content of url"""
     try:
         async with session.get(url) as response:
-            return await response.text()
+            final_url = str(response.url)
+            content = await response.text()
+            return content, final_url
     except UnicodeDecodeError as error:
         logger.info(f"Error fetching URL {url}: {error}")
-        return ""
+        return "", url
+
 
 
 async def fetch_robots(session, base_url):
     """Fetch the robots.txt file from base_url"""
     robots = RobotFileParser()
     robots_url = urljoin(base_url, "/robots.txt")
-    content = await fetch(session, robots_url)
+    content, _ = await fetch(session, robots_url)  # Unpack the tuple returned by fetch()
     if content:
         robots.parse(content.splitlines())
     return robots
 
 
-async def parse(session, base_url, url, depth=0, records_len=0):
+async def parse(session, base_url, url, depth=0):
     """Parse the HTML of url"""
     if depth > 2:
         return None, []
 
-    body = await fetch(session, url)
+    body, url = await fetch(session, url)  # Unpack the tuple returned by fetch()
     soup = BeautifulSoup(body, "html.parser")
 
     titles = {
@@ -57,7 +61,7 @@ async def parse(session, base_url, url, depth=0, records_len=0):
         ]
 
     url_data = UrlData(
-        id=str(records_len),
+        id=str(uuid.uuid4()),  # Generate a new, unique ID for each record
         h1=titles.get("h1"),
         h2=titles.get("h2"),
         h3=titles.get("h3"),
@@ -96,6 +100,8 @@ async def scrape_website_async(base_url:str, concurrent_tasks:int = 10) -> List[
     tasks = set()
     sem = asyncio.Semaphore(concurrent_tasks)  # Limit the number of concurrent tasks
 
+    # Fetch initial URL and get possible redirected base_url
+    _, base_url = await fetch(session, base_url)
     robots = await fetch_robots(session, base_url)
 
     log_task = asyncio.create_task(log_processed_records(records))
@@ -110,7 +116,7 @@ async def scrape_website_async(base_url:str, concurrent_tasks:int = 10) -> List[
                     continue
 
                 async with sem:
-                    task = asyncio.create_task(parse(session, base_url, url, depth, len(records)))
+                    task = asyncio.create_task(parse(session, base_url, url, depth))
                     tasks.add(task)
             else:
                 done_tasks, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -132,13 +138,13 @@ async def scrape_website_async(base_url:str, concurrent_tasks:int = 10) -> List[
 
 async def main():
     """Main function to test the web scraper"""
-    base_url = "www.mluvii.com"
-    for concurrent_tasks in [1, 10, 100]:
+    base_url = "novinky.cz"
+    for concurrent_tasks in [10100]:
         start = time.time()
         test = await scrape_website_async(f"https://{base_url}/", concurrent_tasks)
         end = time.time()
         print(
-            f"Time taken with {concurrent_tasks} concurrent tasks: {end - start} seconds"
+            f"Time taken with {concurrent_tasks} concurrent tasks: {end - start} seconds. {len(test)}"
         )
 
 if __name__ == "__main__":
